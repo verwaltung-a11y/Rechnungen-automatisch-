@@ -14,7 +14,7 @@ from pathlib import Path
 from . import __version__
 from .ablage import Ablage
 from .config import STANDARD_KONFIG_DATEI, Konfig, imap_server_fuer
-from .erkennung import bewerte
+from .erkennung import bewerte, bewerte_mailtext
 from .postfach import Mail, Postfach, start_datum
 
 KEYRING_DIENST = "rechnungen-automatisch"
@@ -60,18 +60,34 @@ def plausibles_datum(rechnungsdatum: date | None, maildatum: date) -> date:
 
 
 def verarbeite_mail(mail: Mail, ablage: Ablage, ausfuehrlich: bool = False) -> list[Path]:
+    """Speichert Rechnungen und Avis einer E-Mail; alles andere wird ignoriert."""
     gespeichert = []
+    gefunden = False
     for anhang in mail.anhaenge:
         ergebnis = bewerte(anhang.dateiname, anhang.daten, mail.betreff, mail.text)
         if ausfuehrlich:
-            log(f"  {anhang.dateiname}: {ergebnis.punkte} Punkte "
+            log(f"  {anhang.dateiname}: {ergebnis.art or 'ignoriert'} "
                 f"({'; '.join(ergebnis.gruende)})")
-        if not ergebnis.ist_rechnung:
+        if not ergebnis.archivieren:
             continue
+        gefunden = True
         d = plausibles_datum(ergebnis.datum, mail.datum)
-        ziel = ablage.speichern(anhang.daten, anhang.dateiname, d, mail.absender, mail.betreff)
+        ziel = ablage.speichern(anhang.daten, anhang.dateiname, d, mail.absender,
+                                mail.betreff, ergebnis.art)
         if ziel:
             gespeichert.append(ziel)
+
+    # Avis kommen oft nur als E-Mail-Text ohne PDF: dann die E-Mail selbst ablegen
+    if not gefunden and mail.roh:
+        ergebnis = bewerte_mailtext(mail.betreff, mail.text)
+        if ergebnis.archivieren:
+            if ausfuehrlich:
+                log(f"  E-Mail selbst: {ergebnis.art} ({'; '.join(ergebnis.gruende)})")
+            d = plausibles_datum(ergebnis.datum, mail.datum)
+            ziel = ablage.speichern(mail.roh, f"{mail.betreff or 'Avis'}.eml", d,
+                                    mail.absender, mail.betreff, ergebnis.art)
+            if ziel:
+                gespeichert.append(ziel)
     return gespeichert
 
 
@@ -100,13 +116,13 @@ def abrufen(konfig: Konfig, passwort: str, ausfuehrlich: bool = False) -> int:
                     log(f"{mail.datum} {mail.absender}: {mail.betreff}")
                 for ziel in verarbeite_mail(mail, ablage, ausfuehrlich):
                     anzahl += 1
-                    log(f"Rechnung gespeichert: {ziel.relative_to(ablage.basis)}")
+                    log(f"Gespeichert: {ziel.relative_to(ablage.basis)}")
                 ablage.mail_merken(mail.message_id)
                 zustand["letzte_uid"][ordner] = {"uidvalidity": uidvalidity, "uid": hoechste}
                 ablage.speichere_zustand()
             zustand["letzte_uid"][ordner] = {"uidvalidity": uidvalidity, "uid": hoechste}
             ablage.speichere_zustand()
-    log(f"Fertig – {anzahl} neue Rechnung(en) in {konfig.ziel_ordner}")
+    log(f"Fertig – {anzahl} neue Rechnung(en)/Avis in {konfig.ziel_ordner}")
     return anzahl
 
 
@@ -199,16 +215,16 @@ def befehl_dauerbetrieb(pfad: Path, ausfuehrlich: bool) -> None:
 def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(
         prog="rechnungen",
-        description="Exportiert Rechnungen automatisch aus E-Mails und sortiert sie nach Monat.",
+        description="Exportiert Rechnungen und Avis automatisch aus E-Mails und sortiert sie nach Monat.",
     )
     p.add_argument("--version", action="version", version=__version__)
     p.add_argument("-k", "--konfig", type=Path, default=STANDARD_KONFIG_DATEI,
                    help=f"Konfigurationsdatei (Standard: {STANDARD_KONFIG_DATEI})")
     p.add_argument("-v", "--ausfuehrlich", action="store_true",
-                   help="Zeigt für jeden Anhang, warum er (k)eine Rechnung ist")
+                   help="Zeigt für jeden Anhang, ob und warum er archiviert wird")
     sub = p.add_subparsers(dest="befehl", required=True)
     sub.add_parser("einrichten", help="E-Mail-Konto und Zielordner einrichten")
-    sub.add_parser("abrufen", help="Einmal alle neuen E-Mails nach Rechnungen durchsuchen")
+    sub.add_parser("abrufen", help="Einmal alle neuen E-Mails nach Rechnungen und Avis durchsuchen")
     sub.add_parser("dauerbetrieb", help="Regelmäßig automatisch abrufen")
     a = p.parse_args(argv)
 

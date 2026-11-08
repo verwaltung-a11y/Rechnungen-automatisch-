@@ -27,6 +27,7 @@ class Mail:
     datum: date
     text: str
     anhaenge: list[Anhang] = field(default_factory=list)
+    roh: bytes = b""
 
 
 def _dekodiere(wert: str | None) -> str:
@@ -86,6 +87,7 @@ def mail_aus_bytes(uid: int, roh: bytes) -> Mail:
         datum=datum,
         text=_text_aus(nachricht),
         anhaenge=anhaenge,
+        roh=roh,
     )
 
 

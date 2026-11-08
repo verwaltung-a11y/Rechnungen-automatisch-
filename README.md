@@ -1,38 +1,59 @@
 # Rechnungen automatisch aus E-Mails
 
 Dieses Programm meldet sich mit deiner E-Mail-Adresse am Postfach an, durchsucht
-die E-Mails nach **Rechnungen** (PDF-Anhänge und E-Rechnungen wie XRechnung/ZUGFeRD),
-speichert sie ab und **sortiert sie automatisch nach Monat**:
+die E-Mails nach **Rechnungen** und **Avis** (Zahlungsavis), speichert sie ab und
+**sortiert sie automatisch nach Monat**. Alles andere – Auftragsbestätigungen,
+Bestellbestätigungen, Lieferscheine, Angebote, Mahnungen, AGB usw. – wird ignoriert.
 
 ```
 Rechnungen/
-├── Rechnungsuebersicht.csv          ← Liste aller Rechnungen (öffnet in Excel)
+├── Rechnungsuebersicht.csv          ← Liste aller Belege (öffnet in Excel)
 ├── 2026/
 │   ├── 09_September/
-│   │   └── 2026-09-03_Telekom_Rechnung_123456.pdf
+│   │   └── Rechnungen/
+│   │       └── 2026-09-03_Telekom_Rechnung_123456.pdf
 │   └── 10_Oktober/
-│       ├── 2026-10-14_Muster GmbH_Rechnung.pdf
-│       └── 2026-10-21_Amazon_invoice.pdf
+│       ├── Rechnungen/
+│       │   ├── 2026-10-14_Muster GmbH_Rechnung.pdf
+│       │   └── 2026-10-21_Amazon_invoice.pdf
+│       └── Avis/
+│           ├── 2026-10-22_Kunde AG_Zahlungsavis.pdf
+│           └── 2026-10-26_Kunde AG_Zahlungsavis 4711.eml
 ```
 
 ## So funktioniert die Erkennung
 
-Für jeden PDF-Anhang werden Punkte vergeben:
+Für jeden PDF-Anhang wird die **Dokumentart** bestimmt – in dieser Reihenfolge:
 
-* Dateiname enthält z. B. „Rechnung“, „Invoice“, „Beleg“, „Quittung“
-* Betreff der E-Mail enthält z. B. „Rechnung“
-* Text im PDF enthält „Rechnung“, „Rechnungsnummer“, „MwSt“, „Gesamtbetrag“,
-  „Zahlbar bis“, Euro-Beträge usw.
-* AGB, Datenschutz, Widerrufsbelehrung usw. werden aussortiert
-* XRechnung/ZUGFeRD-XML-Dateien werden immer als Rechnung erkannt
+1. **Text im PDF** – maßgeblich ist, was zuerst im Dokument steht (meist die Überschrift):
+   * **Rechnung**: „Rechnung“, „Invoice“, „Gutschrift“, „Schlussrechnung“ … oder Felder
+     wie „Rechnungsnummer“ / „Rechnungsdatum“
+   * **Avis**: „Zahlungsavis“, „Avis“, „Zahlungsanzeige“, „Remittance/Payment Advice“
+   * **Ignoriert**: „Auftragsbestätigung“, „Bestellbestätigung“, „Lieferschein“,
+     „Angebot“, „Kostenvoranschlag“, „Proforma“, „Mahnung“, „Zahlungserinnerung“,
+     „Versandbestätigung“, AGB, Datenschutz …
+   * Verweise wie „Lieferschein-Nr. 123“ oder „Auftragsbestätigung Nr. AB-4711“ *auf
+     einer Rechnung* machen sie nicht zur Auftragsbestätigung.
+   * Wörter wie „Rechnungsadresse“ zählen nicht als Rechnung.
+2. **Dateiname**, falls das PDF keinen lesbaren Text hat (z. B. Scan):
+   „Rechnung_4711.pdf“, „RE-4711.pdf“ → Rechnung; „AB_4711.pdf“, „LS-123.pdf“ → ignoriert.
+3. **Betreff der E-Mail** als letzter Hinweis.
 
-Das **Rechnungsdatum** wird aus dem PDF gelesen (z. B. „Rechnungsdatum: 14.10.2026“).
+XRechnung/ZUGFeRD-XML-Dateien werden immer als Rechnung erkannt.
+
+**Avis ohne Anhang:** Kommt ein Avis nur als E-Mail-Text (Betreff z. B. „Zahlungsavis“),
+wird die E-Mail selbst als `.eml`-Datei im Ordner `Avis` gespeichert (öffnet in Outlook).
+
+Das **Belegdatum** wird aus dem PDF gelesen (z. B. „Rechnungsdatum: 14.10.2026“).
 Wird keins gefunden oder passt es nicht zum Eingang der E-Mail, wird das
 Empfangsdatum der E-Mail verwendet.
 
-Jede Rechnung wird nur **einmal** gespeichert, auch wenn sie mehrfach ankommt.
+Jeder Beleg wird nur **einmal** gespeichert, auch wenn er mehrfach ankommt.
 Das Programm liest die E-Mails nur – es verändert, verschiebt oder löscht nichts
 und markiert auch nichts als gelesen.
+
+**Tipp:** Mit `python -m rechnungen -v abrufen` siehst du für jeden Anhang, ob er als
+Rechnung, Avis oder gar nicht archiviert wird – und warum.
 
 ## Installation
 
@@ -85,7 +106,7 @@ python -m rechnungen dauerbetrieb
 Beim ersten Abruf werden die E-Mails der letzten 365 Tage durchsucht (einstellbar),
 danach nur noch neue E-Mails.
 
-Mit `-v` siehst du für jeden Anhang, warum er als Rechnung erkannt wurde oder nicht:
+Mit `-v` siehst du für jeden Anhang, ob und warum er archiviert wird:
 
 ```
 python -m rechnungen -v abrufen

@@ -1,4 +1,4 @@
-"""Speichert erkannte Rechnungen sortiert nach Jahr/Monat und merkt sich Verarbeitetes."""
+"""Speichert Rechnungen und Avis sortiert nach Jahr/Monat und merkt sich Verarbeitetes."""
 
 from __future__ import annotations
 
@@ -9,7 +9,10 @@ import re
 from datetime import date
 from pathlib import Path
 
-from .erkennung import MONATSNAMEN
+from .erkennung import AVIS, MONATSNAMEN, RECHNUNG
+
+# Unterordner je Dokumentart innerhalb des Monats
+UNTERORDNER = {RECHNUNG: "Rechnungen", AVIS: "Avis"}
 
 
 def sicherer_name(text: str, max_laenge: int = 60) -> str:
@@ -59,13 +62,14 @@ class Ablage:
         rechnungsdatum: date,
         absender: str,
         betreff: str,
+        art: str = RECHNUNG,
     ) -> Path | None:
         """Legt die Datei ab. Gibt None zurück, wenn sie schon vorhanden war."""
         pruefsumme = hashlib.sha256(daten).hexdigest()
         if pruefsumme in self._zustand["hashes"]:
             return None
 
-        ordner = monats_ordner(self.basis, rechnungsdatum)
+        ordner = monats_ordner(self.basis, rechnungsdatum) / UNTERORDNER[art]
         ordner.mkdir(parents=True, exist_ok=True)
         stamm, punkt, endung = dateiname.rpartition(".")
         if not punkt:
@@ -82,19 +86,20 @@ class Ablage:
         ziel.write_bytes(daten)
 
         self._zustand["hashes"].append(pruefsumme)
-        self._index_eintrag(ziel, rechnungsdatum, absender, betreff)
+        self._index_eintrag(ziel, rechnungsdatum, art, absender, betreff)
         return ziel
 
-    def _index_eintrag(self, ziel: Path, d: date, absender: str, betreff: str) -> None:
+    def _index_eintrag(self, ziel: Path, d: date, art: str, absender: str, betreff: str) -> None:
         index = self.basis / "Rechnungsuebersicht.csv"
         neu = not index.exists()
         with index.open("a", newline="", encoding="utf-8-sig") as f:
             w = csv.writer(f, delimiter=";")
             if neu:
-                w.writerow(["Datum", "Monat", "Absender", "Betreff", "Datei"])
+                w.writerow(["Datum", "Monat", "Art", "Absender", "Betreff", "Datei"])
             w.writerow([
                 d.strftime("%d.%m.%Y"),
                 f"{MONATSNAMEN[d.month - 1]} {d.year}",
+                art,
                 absender,
                 betreff,
                 str(ziel.relative_to(self.basis)),
